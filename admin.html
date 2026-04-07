@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin Panel | Goldmark Real Estate</title>
+  <link rel="icon" type="image/jpeg" href="goldmark-logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="navbar-logo">
+        <img src="goldmark-logo.jpg" alt="Goldmark Real Estate">
+      </a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="listings.html">Properties</a>
+        <a href="about.html">About</a>
+        <a href="agents.html">Agents</a>
+        <a href="contact.html">Contact</a>
+        <a href="calculator.html">Calculator</a>
+        <a href="privacy.html">Privacy Policy and PAIA Manual</a>
+      </div>
+      <div class="nav-cta">
+        <button class="btn btn-sm btn-outline-dark" id="logoutBtn" style="display:none;" onclick="adminLogout()">Logout</button>
+      </div>
+      <button class="hamburger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="mobile-nav">
+    <a href="index.html">Home</a>
+    <a href="listings.html">Properties</a>
+    <a href="about.html">About</a>
+    <a href="agents.html">Agents</a>
+    <a href="contact.html">Contact</a>
+    <a href="calculator.html">Calculator</a>
+  </div>
+
+  <!-- Login Screen -->
+  <div class="admin-login" id="adminLogin">
+    <div class="admin-login-card">
+      <img src="goldmark-logo.jpg" alt="Goldmark" style="height:48px;margin:0 auto 20px;">
+      <h2>Admin Panel</h2>
+      <p>Enter the admin password to manage listings</p>
+      <form onsubmit="adminLogin(event)">
+        <div class="form-group">
+          <input type="password" id="adminPassword" placeholder="Enter password" required style="text-align:center;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Login</button>
+        <p id="loginError" style="color:var(--red);font-size:0.85rem;margin-top:12px;display:none;">Incorrect password. Please try again.</p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Panel -->
+  <div class="admin-panel" id="adminPanel">
+    <div class="container">
+      <div class="admin-header">
+        <h1>Manage Listings</h1>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="openAddModal()">+ Add Listing</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="admin-stats">
+        <div class="admin-stat">
+          <h3 id="statTotal">0</h3>
+          <p>Total Listings</p>
+        </div>
+        <div class="admin-stat">
+          <h3 id="statActive">0</h3>
+          <p>Active</p>
+        </div>
+        <div class="admin-stat">
+          <h3 id="statInactive">0</h3>
+          <p>Inactive</p>
+        </div>
+      </div>
+
+      <!-- Import/Export -->
+      <div class="admin-actions">
+        <button class="btn btn-secondary btn-sm" onclick="exportJSON()">Export JSON</button>
+        <label class="btn btn-outline-dark btn-sm" style="cursor:pointer;">
+          Import JSON
+          <input type="file" accept=".json" onchange="importJSON(event)" style="display:none;">
+        </label>
+        <span style="font-size:0.8rem;color:var(--gray-500);align-self:center;">Export your listings, then replace <code>data/listings.json</code> on your hosting.</span>
+      </div>
+
+      <!-- Listings Table -->
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>Price</th>
+              <th>Area</th>
+              <th>Type</th>
+              <th>Beds</th>
+              <th>Status</th>
+              <th>Active</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adminTableBody">
+            <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray-500);">Loading listings...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal-overlay" id="listingModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add New Listing</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <form id="listingForm" onsubmit="saveListing(event)">
+        <input type="hidden" id="editId">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Property Title *</label>
+            <input type="text" id="fieldTitle" required placeholder="e.g. 3 Bedroom House in Silver Lakes">
+          </div>
+          <div class="form-group">
+            <label>Status *</label>
+            <select id="fieldStatus" required>
+              <option value="For Sale">For Sale</option>
+              <option value="To Rent">To Rent</option>
+              <option value="Sold">Sold</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Price (Rands) *</label>
+            <input type="number" id="fieldPrice" required placeholder="e.g. 2500000">
+          </div>
+          <div class="form-group">
+            <label>Property Type *</label>
+            <select id="fieldType" required>
+              <option value="House">House</option>
+              <option value="Townhouse">Townhouse</option>
+              <option value="Apartment">Apartment</option>
+              <option value="Vacant Land">Vacant Land</option>
+              <option value="Commercial">Commercial</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Area *</label>
+            <select id="fieldArea" required>
+              <option value="">Select Area</option>
+              <option value="Silver Lakes">Silver Lakes</option>
+              <option value="Moot">Moot</option>
+              <option value="Queenswood">Queenswood</option>
+              <option value="Kilner Park">Kilner Park</option>
+              <option value="Weavind Park">Weavind Park</option>
+              <option value="Capital Park">Capital Park</option>
+              <option value="Colbyn">Colbyn</option>
+              <option value="Moregloed">Moregloed</option>
+              <option value="Waverley">Waverley</option>
+              <option value="Villieria">Villieria</option>
+              <option value="Rietondale">Rietondale</option>
+              <option value="Meyerspark">Meyerspark</option>
+              <option value="Silverton">Silverton</option>
+              <option value="East Lynne">East Lynne</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Full Address</label>
+            <input type="text" id="fieldAddress" placeholder="e.g. 12 Main St, Silver Lakes, Pretoria">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Bedrooms</label>
+            <input type="number" id="fieldBedrooms" min="0" value="3">
+          </div>
+          <div class="form-group">
+            <label>Bathrooms</label>
+            <input type="number" id="fieldBathrooms" min="0" value="2">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Garages</label>
+            <input type="number" id="fieldGarages" min="0" value="1">
+          </div>
+          <div class="form-group">
+            <label>Floor Size (m&sup2;)</label>
+            <input type="number" id="fieldFloorSize" min="0" placeholder="e.g. 220">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Erf Size (m&sup2;)</label>
+            <input type="number" id="fieldErfSize" min="0" placeholder="e.g. 800">
+          </div>
+          <div class="form-group">
+            <label>Agent</label>
+            <select id="fieldAgent">
+              <option value="Johan van Niekerk">Johan van Niekerk</option>
+              <option value="Ina van Niekerk">Ina van Niekerk</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="fieldDescription" rows="5" placeholder="Property description..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Property Features (select all that apply)</label>
+          <div id="featuresCheckboxes" class="features-checkbox-grid"></div>
+          <div style="margin-top:8px;">
+            <label style="font-size:0.8rem;color:var(--gray-500);">Additional features (comma-separated):</label>
+            <input type="text" id="fieldFeaturesExtra" placeholder="e.g. Wine Cellar, Home Theatre">
+          </div>
+        </div>
+
+        <!-- Cover Photo -->
+        <div class="form-group">
+          <label>Cover Photo (main listing image)</label>
+          <div class="photo-drop-zone" id="coverDropZone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleCoverDrop(event)">
+            <div class="drop-zone-content" id="coverDropContent">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+              <p>Drag & drop cover photo here, or <strong>click to browse</strong></p>
+              <span style="font-size:0.75rem;color:var(--gray-400);">JPG, PNG up to 5MB</span>
+            </div>
+            <input type="file" id="coverFileInput" accept="image/*" onchange="handleCoverSelect(event)" style="display:none;">
+          </div>
+          <div id="coverPreview" class="photo-preview-single"></div>
+        </div>
+
+        <!-- Gallery Photos -->
+        <div class="form-group">
+          <label>Gallery Photos (up to 100 images, sorted alphabetically by filename)</label>
+          <div class="photo-drop-zone" id="galleryDropZone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleGalleryDrop(event)">
+            <div class="drop-zone-content" id="galleryDropContent">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+              <p>Drag & drop gallery photos here, or <strong>click to browse</strong></p>
+              <span style="font-size:0.75rem;color:var(--gray-400);">Select multiple files. JPG, PNG up to 5MB each. Max 100 images.</span>
+            </div>
+            <input type="file" id="galleryFileInput" accept="image/*" multiple onchange="handleGallerySelect(event)" style="display:none;">
+          </div>
+          <div id="galleryCount" style="font-size:0.8rem;color:var(--gray-500);margin-top:6px;"></div>
+          <div id="galleryPreview" class="photo-preview-grid"></div>
+        </div>
+
+        <!-- Property24 Link -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>Property24 Reference (optional)</label>
+            <input type="text" id="fieldP24Ref" placeholder="e.g. P24-12345678">
+          </div>
+          <div class="form-group">
+            <label>Property24 Listing URL (optional)</label>
+            <input type="url" id="fieldP24Link" placeholder="e.g. https://www.property24.com/for-sale/...">
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-top:8px;">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="fieldActive" checked style="width:auto;margin-right:6px;">
+              Active (visible on website)
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:24px;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">Save Listing</button>
+          <button type="button" class="btn btn-outline-dark" onclick="closeModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/main.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

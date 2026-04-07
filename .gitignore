@@ -1,0 +1,16 @@
+# Claude Code settings
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Old files with spaces (replaced with URL-safe names)
+Johan Profile Pic.png
+goldmark logo.jpg
