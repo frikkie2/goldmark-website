@@ -1,7 +1,5 @@
-/* ===== ADMIN PANEL JS ===== */
+/* ===== ADMIN PANEL JS - FIREBASE VERSION ===== */
 
-const ADMIN_PASS = 'Goldmark2026';
-const STORAGE_KEY = 'goldmark_listings';
 const MAX_IMAGE_WIDTH = 1400;
 const MAX_GALLERY_IMAGES = 100;
 const JPEG_QUALITY = 0.75;
@@ -42,72 +40,90 @@ let adminListings = [];
 let currentCoverImage = null;   // base64 string
 let currentGalleryImages = [];  // [{name, data}] sorted by name
 
-// --- Login ---
+// ===== FIREBASE AUTH =====
+
 function adminLogin(e) {
   e.preventDefault();
-  const pw = document.getElementById('adminPassword').value;
-  if (pw === ADMIN_PASS) {
-    document.getElementById('adminLogin').style.display = 'none';
-    document.getElementById('adminPanel').classList.add('active');
-    document.getElementById('logoutBtn').style.display = 'inline-flex';
-    sessionStorage.setItem('goldmark_admin', 'true');
-    loadAdminListings();
-  } else {
-    document.getElementById('loginError').style.display = 'block';
-  }
+  const email = document.getElementById('adminEmail').value;
+  const password = document.getElementById('adminPassword').value;
+  const errorEl = document.getElementById('loginError');
+  const btn = e.target.querySelector('button[type="submit"]');
+
+  errorEl.style.display = 'none';
+  btn.textContent = 'Signing in...';
+  btn.disabled = true;
+
+  firebase.auth().signInWithEmailAndPassword(email, password)
+    .then(() => {
+      // onAuthStateChanged will handle UI
+    })
+    .catch(err => {
+      errorEl.textContent = err.code === 'auth/invalid-credential'
+        ? 'Incorrect email or password.'
+        : err.code === 'auth/too-many-requests'
+        ? 'Too many attempts. Please wait a moment.'
+        : 'Login failed: ' + err.message;
+      errorEl.style.display = 'block';
+      btn.textContent = 'Login';
+      btn.disabled = false;
+    });
 }
 
 function adminLogout() {
-  sessionStorage.removeItem('goldmark_admin');
-  document.getElementById('adminLogin').style.display = 'flex';
-  document.getElementById('adminPanel').classList.remove('active');
-  document.getElementById('logoutBtn').style.display = 'none';
+  firebase.auth().signOut();
 }
 
-// --- Check session ---
-function checkAdminSession() {
-  if (sessionStorage.getItem('goldmark_admin') === 'true') {
+// Listen for auth state changes
+firebase.auth().onAuthStateChanged(user => {
+  if (user) {
     document.getElementById('adminLogin').style.display = 'none';
     document.getElementById('adminPanel').classList.add('active');
     document.getElementById('logoutBtn').style.display = 'inline-flex';
     loadAdminListings();
+  } else {
+    document.getElementById('adminLogin').style.display = 'flex';
+    document.getElementById('adminPanel').classList.remove('active');
+    document.getElementById('logoutBtn').style.display = 'none';
   }
-}
+});
 
-// --- Load listings ---
+// ===== LOAD LISTINGS FROM FIRESTORE =====
+
 async function loadAdminListings() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    try {
-      adminListings = JSON.parse(stored);
-      renderAdminTable();
-      return;
-    } catch (e) { /* fall through */ }
-  }
-
   try {
-    const response = await fetch('data/listings.json');
-    if (response.ok) {
-      adminListings = await response.json();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(adminListings));
-      renderAdminTable();
-    }
+    const snapshot = await db.collection('listings').orderBy('dateAdded', 'desc').get();
+    adminListings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderAdminTable();
   } catch (e) {
+    console.error('Error loading listings:', e);
     adminListings = [];
     renderAdminTable();
   }
 }
 
-// --- Save to localStorage ---
-function saveListingsToStorage() {
+// ===== SAVE LISTING TO FIRESTORE =====
+
+async function saveListingToFirestore(listing) {
+  const id = listing.id;
+  const data = { ...listing };
+  delete data.id; // Firestore uses doc ID separately
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(adminListings));
+    await db.collection('listings').doc(id).set(data);
+    return true;
   } catch (e) {
-    alert('Warning: Storage is full. Consider exporting your listings and reducing image sizes. Error: ' + e.message);
+    console.error('Error saving listing:', e);
+    if (e.message && e.message.includes('exceeds the maximum')) {
+      alert('Error: Listing data is too large. Try reducing the number or size of images. Tip: Use fewer gallery images or lower resolution photos.');
+    } else {
+      alert('Error saving listing: ' + e.message);
+    }
+    return false;
   }
 }
 
-// --- Render table ---
+// ===== RENDER TABLE =====
+
 function renderAdminTable() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
@@ -179,7 +195,6 @@ function getSelectedFeatures() {
 }
 
 function setSelectedFeatures(features) {
-  // Uncheck all first
   document.querySelectorAll('#featuresCheckboxes input[type="checkbox"]').forEach(cb => {
     cb.checked = false;
   });
@@ -206,7 +221,6 @@ function setSelectedFeatures(features) {
 
 // ===== IMAGE HANDLING =====
 
-// Compress and resize an image file, returns a promise with base64
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -217,7 +231,6 @@ function compressImage(file) {
         let w = img.width;
         let h = img.height;
 
-        // Resize if larger than max
         if (w > MAX_IMAGE_WIDTH) {
           h = Math.round(h * MAX_IMAGE_WIDTH / w);
           w = MAX_IMAGE_WIDTH;
@@ -252,7 +265,6 @@ function handleDragLeave(e) {
   e.currentTarget.classList.remove('dragover');
 }
 
-// Make drop zones clickable
 document.addEventListener('DOMContentLoaded', () => {
   const coverZone = document.getElementById('coverDropZone');
   const galleryZone = document.getElementById('galleryDropZone');
@@ -367,7 +379,6 @@ async function addGalleryImages(files) {
     }
   }
 
-  // Sort by filename alphabetically
   currentGalleryImages.sort((a, b) => a.name.localeCompare(b.name));
   renderGalleryPreview();
 }
@@ -459,7 +470,6 @@ function editListing(id) {
   // Restore photos
   clearPhotoState();
 
-  // Cover image (first in images array, or dedicated coverImage field)
   if (listing.coverImage) {
     currentCoverImage = listing.coverImage;
     renderCoverPreview();
@@ -468,7 +478,6 @@ function editListing(id) {
     renderCoverPreview();
   }
 
-  // Gallery images
   if (listing.galleryImages && listing.galleryImages.length > 0) {
     currentGalleryImages = listing.galleryImages.map(img => ({
       name: img.name || 'photo.jpg',
@@ -476,7 +485,6 @@ function editListing(id) {
     }));
     renderGalleryPreview();
   } else if (listing.images && listing.images.length > 1) {
-    // Legacy: convert old URL-based images to gallery format
     currentGalleryImages = listing.images.slice(1).map((url, i) => ({
       name: `photo_${String(i + 1).padStart(3, '0')}.jpg`,
       data: url
@@ -487,16 +495,21 @@ function editListing(id) {
   document.getElementById('listingModal').classList.add('active');
 }
 
-// --- Save ---
-function saveListing(e) {
+// ===== SAVE =====
+
+async function saveListing(e) {
   e.preventDefault();
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
 
   const editId = document.getElementById('editId').value;
   const price = parseInt(document.getElementById('fieldPrice').value) || 0;
   const agentName = document.getElementById('fieldAgent').value;
   const agentPhone = agentName === 'Johan van Niekerk' ? '0824445278' : '0824878587';
 
-  // Build images array: cover first, then gallery sorted by name
+  // Build images array: cover first, then gallery
   const allImages = [];
   if (currentCoverImage) allImages.push(currentCoverImage);
   currentGalleryImages.forEach(img => allImages.push(img.data));
@@ -528,30 +541,34 @@ function saveListing(e) {
     active: document.getElementById('fieldActive').checked
   };
 
-  if (editId) {
-    const index = adminListings.findIndex(l => l.id === editId);
-    if (index !== -1) adminListings[index] = listing;
-  } else {
-    adminListings.unshift(listing);
-  }
+  const success = await saveListingToFirestore(listing);
 
-  saveListingsToStorage();
-  renderAdminTable();
-  closeModal();
+  btn.textContent = 'Save Listing';
+  btn.disabled = false;
+
+  if (success) {
+    await loadAdminListings();
+    closeModal();
+  }
 }
 
-// --- Delete ---
-function deleteListing(id) {
+// ===== DELETE =====
+
+async function deleteListing(id) {
   const listing = adminListings.find(l => l.id === id);
   if (!listing) return;
   if (!confirm(`Are you sure you want to delete "${listing.title}"?`)) return;
 
-  adminListings = adminListings.filter(l => l.id !== id);
-  saveListingsToStorage();
-  renderAdminTable();
+  try {
+    await db.collection('listings').doc(id).delete();
+    await loadAdminListings();
+  } catch (e) {
+    alert('Error deleting listing: ' + e.message);
+  }
 }
 
-// --- Export JSON ---
+// ===== EXPORT / IMPORT =====
+
 function exportJSON() {
   const json = JSON.stringify(adminListings, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -565,25 +582,35 @@ function exportJSON() {
   URL.revokeObjectURL(url);
 }
 
-// --- Import JSON ---
-function importJSON(e) {
+async function importJSON(e) {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = function(event) {
+  reader.onload = async function(event) {
     try {
       const imported = JSON.parse(event.target.result);
       if (!Array.isArray(imported)) {
         alert('Invalid format: JSON file must contain an array of listings.');
         return;
       }
-      if (!confirm(`This will replace all current listings with ${imported.length} imported listings. Continue?`)) return;
+      if (!confirm(`This will import ${imported.length} listings to Firestore. Existing listings with the same ID will be overwritten. Continue?`)) return;
 
-      adminListings = imported;
-      saveListingsToStorage();
-      renderAdminTable();
-      alert(`Successfully imported ${imported.length} listings.`);
+      let count = 0;
+      for (const listing of imported) {
+        const id = listing.id || generateId();
+        const data = { ...listing };
+        delete data.id;
+        try {
+          await db.collection('listings').doc(id).set(data);
+          count++;
+        } catch (err) {
+          console.warn('Failed to import listing:', id, err);
+        }
+      }
+
+      await loadAdminListings();
+      alert(`Successfully imported ${count} of ${imported.length} listings.`);
     } catch (err) {
       alert('Error reading JSON file: ' + err.message);
     }
@@ -601,6 +628,3 @@ document.getElementById('listingModal')?.addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeModal();
 });
-
-// --- Init ---
-document.addEventListener('DOMContentLoaded', checkAdminSession);

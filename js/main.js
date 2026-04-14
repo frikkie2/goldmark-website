@@ -23,13 +23,13 @@ const icons = {
 let listingsData = [];
 
 async function loadListings() {
-  // Check localStorage first (syncs with admin panel edits)
-  const stored = localStorage.getItem('goldmark_listings');
-  if (stored) {
-    try {
-      listingsData = JSON.parse(stored);
-      return listingsData.filter(l => l.active);
-    } catch (e) { /* fall through to JSON file */ }
+  // Load from Firestore
+  try {
+    const snapshot = await db.collection('listings').where('active', '==', true).get();
+    listingsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return listingsData;
+  } catch (e) {
+    console.warn('Firestore unavailable, falling back to static JSON:', e);
   }
 
   // Fall back to static JSON file

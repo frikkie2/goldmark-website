@@ -51,13 +51,16 @@
     <div class="admin-login-card">
       <img src="goldmark-logo.jpg" alt="Goldmark" style="height:48px;margin:0 auto 20px;">
       <h2>Admin Panel</h2>
-      <p>Enter the admin password to manage listings</p>
+      <p>Sign in to manage listings</p>
       <form onsubmit="adminLogin(event)">
         <div class="form-group">
-          <input type="password" id="adminPassword" placeholder="Enter password" required style="text-align:center;">
+          <input type="email" id="adminEmail" placeholder="Email address" required style="text-align:center;">
+        </div>
+        <div class="form-group">
+          <input type="password" id="adminPassword" placeholder="Password" required style="text-align:center;">
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;">Login</button>
-        <p id="loginError" style="color:var(--red);font-size:0.85rem;margin-top:12px;display:none;">Incorrect password. Please try again.</p>
+        <p id="loginError" style="color:var(--red);font-size:0.85rem;margin-top:12px;display:none;">Incorrect email or password.</p>
       </form>
     </div>
   </div>
@@ -95,7 +98,7 @@
           Import JSON
           <input type="file" accept=".json" onchange="importJSON(event)" style="display:none;">
         </label>
-        <span style="font-size:0.8rem;color:var(--gray-500);align-self:center;">Export your listings, then replace <code>data/listings.json</code> on your hosting.</span>
+        <span style="font-size:0.8rem;color:var(--gray-500);align-self:center;">Listings are saved to the cloud automatically. Export for backup.</span>
       </div>
 
       <!-- Listings Table -->
@@ -298,6 +301,11 @@
     </div>
   </div>
 
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
   <script src="js/main.js"></script>
   <script src="js/admin.js"></script>
 </body>
