@@ -218,6 +218,7 @@ function renderAdminTable() {
       <td>${l.active ? '<span style="color:#25D366;">Yes</span>' : '<span style="color:var(--red);">No</span>'}</td>
       <td class="actions">
         <button class="btn-edit" onclick="editListing('${l.id}')">Edit</button>
+        <button class="btn-toggle" onclick="toggleListing('${l.id}')" style="background:${l.active ? 'var(--gray-500)' : '#25D366'};color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:0.75rem;cursor:pointer;">${l.active ? 'Deactivate' : 'Activate'}</button>
         <button class="btn-delete" onclick="deleteListing('${l.id}')">Delete</button>
       </td>
     </tr>
@@ -647,6 +648,24 @@ async function saveListing(e) {
     btn.textContent = 'Save Listing';
     btn.disabled = false;
     if (statusEl) statusEl.style.display = 'none';
+  }
+}
+
+// ===== TOGGLE ACTIVE/INACTIVE =====
+
+async function toggleListing(id) {
+  const listing = adminListings.find(l => l.id === id);
+  if (!listing) return;
+
+  const newStatus = !listing.active;
+  const action = newStatus ? 'activate' : 'deactivate';
+  if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} "${listing.title}"?`)) return;
+
+  try {
+    await db.collection('listings').doc(id).update({ active: newStatus });
+    await loadAdminListings();
+  } catch (e) {
+    alert('Error: ' + e.message);
   }
 }
 

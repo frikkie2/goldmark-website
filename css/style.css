@@ -1291,6 +1291,12 @@ h3 { font-size: clamp(1.2rem, 3vw, 1.6rem); }
   gap: 8px;
 }
 
+.sidebar-agent-card .agent-actions .btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .sidebar-enquiry {
   background: var(--white);
   border-radius: var(--radius-lg);

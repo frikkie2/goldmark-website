@@ -91,14 +91,10 @@
         </div>
       </div>
 
-      <!-- Import/Export -->
+      <!-- Backup -->
       <div class="admin-actions">
-        <button class="btn btn-secondary btn-sm" onclick="exportJSON()">Export JSON</button>
-        <label class="btn btn-outline-dark btn-sm" style="cursor:pointer;">
-          Import JSON
-          <input type="file" accept=".json" onchange="importJSON(event)" style="display:none;">
-        </label>
-        <span style="font-size:0.8rem;color:var(--gray-500);align-self:center;">Listings are saved to the cloud automatically. Export for backup.</span>
+        <button class="btn btn-secondary btn-sm" onclick="exportJSON()">Download Backup</button>
+        <span style="font-size:0.8rem;color:var(--gray-500);align-self:center;">Listings are saved to the cloud automatically. Changes are live immediately.</span>
       </div>
 
       <!-- Listings Table -->
