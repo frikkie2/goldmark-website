@@ -1,8 +1,13 @@
-/* ===== ADMIN PANEL JS - FIREBASE VERSION ===== */
+/* ===== ADMIN PANEL JS - FIREBASE + CLOUDINARY VERSION ===== */
 
-const MAX_IMAGE_WIDTH = 1400;
+const MAX_IMAGE_WIDTH = 1600;
 const MAX_GALLERY_IMAGES = 100;
-const JPEG_QUALITY = 0.75;
+const JPEG_QUALITY = 0.82;
+
+// Cloudinary config
+const CLOUDINARY_CLOUD_NAME = 'dntewvxtq';
+const CLOUDINARY_UPLOAD_PRESET = 'zvityjrs';
+const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 // Property24-aligned feature categories
 const FEATURE_CATEGORIES = {
@@ -37,8 +42,75 @@ const FEATURE_CATEGORIES = {
 };
 
 let adminListings = [];
-let currentCoverImage = null;   // base64 string
-let currentGalleryImages = [];  // [{name, data}] sorted by name
+let currentCoverImage = null;   // { url, publicId } or { file, preview } for new uploads
+let currentGalleryImages = [];  // [{ name, url, publicId }] or [{ name, file, preview }]
+
+// ===== CLOUDINARY UPLOAD =====
+
+// Compress image client-side before uploading (saves bandwidth, keeps quality)
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        const canvas = document.createElement('canvas');
+        let w = img.width;
+        let h = img.height;
+
+        if (w > MAX_IMAGE_WIDTH) {
+          h = Math.round(h * MAX_IMAGE_WIDTH / w);
+          w = MAX_IMAGE_WIDTH;
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('Failed to compress image'));
+        }, 'image/jpeg', JPEG_QUALITY);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Upload a single image to Cloudinary, returns { url, publicId }
+async function uploadToCloudinary(file, folder) {
+  // Compress first
+  const compressed = await compressImage(file);
+
+  const formData = new FormData();
+  formData.append('file', compressed);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  formData.append('folder', folder);
+
+  const response = await fetch(CLOUDINARY_UPLOAD_URL, {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error('Upload failed: ' + response.statusText);
+  }
+
+  const data = await response.json();
+  return {
+    url: data.secure_url,
+    publicId: data.public_id
+  };
+}
+
+// Get a local preview URL for a file (before upload)
+function getLocalPreview(file) {
+  return URL.createObjectURL(file);
+}
 
 // ===== FIREBASE AUTH =====
 
@@ -106,18 +178,14 @@ async function loadAdminListings() {
 async function saveListingToFirestore(listing) {
   const id = listing.id;
   const data = { ...listing };
-  delete data.id; // Firestore uses doc ID separately
+  delete data.id;
 
   try {
     await db.collection('listings').doc(id).set(data);
     return true;
   } catch (e) {
     console.error('Error saving listing:', e);
-    if (e.message && e.message.includes('exceeds the maximum')) {
-      alert('Error: Listing data is too large. Try reducing the number or size of images. Tip: Use fewer gallery images or lower resolution photos.');
-    } else {
-      alert('Error saving listing: ' + e.message);
-    }
+    alert('Error saving listing: ' + e.message);
     return false;
   }
 }
@@ -221,37 +289,6 @@ function setSelectedFeatures(features) {
 
 // ===== IMAGE HANDLING =====
 
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const img = new Image();
-      img.onload = function() {
-        const canvas = document.createElement('canvas');
-        let w = img.width;
-        let h = img.height;
-
-        if (w > MAX_IMAGE_WIDTH) {
-          h = Math.round(h * MAX_IMAGE_WIDTH / w);
-          w = MAX_IMAGE_WIDTH;
-        }
-
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
-        resolve(dataUrl);
-      };
-      img.onerror = reject;
-      img.src = e.target.result;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 // --- Drag & Drop handlers ---
 function handleDragOver(e) {
   e.preventDefault();
@@ -290,25 +327,19 @@ async function handleCoverDrop(e) {
   const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
   if (files.length === 0) return;
 
-  await setCoverImage(files[0]);
+  setCoverFromFile(files[0]);
 }
 
 async function handleCoverSelect(e) {
   const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
   if (files.length === 0) return;
-  await setCoverImage(files[0]);
+  setCoverFromFile(files[0]);
 }
 
-async function setCoverImage(file) {
-  const preview = document.getElementById('coverPreview');
-  preview.innerHTML = '<p style="font-size:0.85rem;color:var(--gray-500);">Compressing image...</p>';
-
-  try {
-    currentCoverImage = await compressImage(file);
-    renderCoverPreview();
-  } catch (err) {
-    preview.innerHTML = '<p style="color:var(--red);font-size:0.85rem;">Error processing image.</p>';
-  }
+function setCoverFromFile(file) {
+  const preview = getLocalPreview(file);
+  currentCoverImage = { file: file, preview: preview, url: null, publicId: null };
+  renderCoverPreview();
 }
 
 function renderCoverPreview() {
@@ -318,15 +349,19 @@ function renderCoverPreview() {
     return;
   }
 
+  const src = currentCoverImage.url || currentCoverImage.preview;
   preview.innerHTML = `
     <div class="preview-item">
-      <img src="${currentCoverImage}" alt="Cover photo">
+      <img src="${src}" alt="Cover photo">
       <button class="preview-remove" onclick="event.stopPropagation();removeCoverImage()" title="Remove">&times;</button>
     </div>
   `;
 }
 
 function removeCoverImage() {
+  if (currentCoverImage && currentCoverImage.preview && !currentCoverImage.url) {
+    URL.revokeObjectURL(currentCoverImage.preview);
+  }
   currentCoverImage = null;
   renderCoverPreview();
 }
@@ -340,17 +375,17 @@ async function handleGalleryDrop(e) {
   const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
   if (files.length === 0) return;
 
-  await addGalleryImages(files);
+  addGalleryFiles(files);
 }
 
 async function handleGallerySelect(e) {
   const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
   if (files.length === 0) return;
-  await addGalleryImages(files);
+  addGalleryFiles(files);
   e.target.value = '';
 }
 
-async function addGalleryImages(files) {
+function addGalleryFiles(files) {
   const countEl = document.getElementById('galleryCount');
   const remaining = MAX_GALLERY_IMAGES - currentGalleryImages.length;
 
@@ -364,21 +399,18 @@ async function addGalleryImages(files) {
     alert(`Only adding ${remaining} images (${MAX_GALLERY_IMAGES} max). ${files.length - remaining} skipped.`);
   }
 
-  countEl.textContent = `Processing ${toProcess.length} image(s)...`;
-
-  for (let i = 0; i < toProcess.length; i++) {
-    try {
-      const data = await compressImage(toProcess[i]);
-      currentGalleryImages.push({
-        name: toProcess[i].name,
-        data: data
-      });
-      countEl.textContent = `Processed ${i + 1} of ${toProcess.length}...`;
-    } catch (err) {
-      console.warn('Failed to process:', toProcess[i].name, err);
-    }
+  for (const file of toProcess) {
+    const preview = getLocalPreview(file);
+    currentGalleryImages.push({
+      name: file.name,
+      file: file,
+      preview: preview,
+      url: null,
+      publicId: null
+    });
   }
 
+  // Sort by filename
   currentGalleryImages.sort((a, b) => a.name.localeCompare(b.name));
   renderGalleryPreview();
 }
@@ -396,16 +428,23 @@ function renderGalleryPreview() {
     return;
   }
 
-  preview.innerHTML = currentGalleryImages.map((img, i) => `
-    <div class="preview-item">
-      <img src="${img.data}" alt="${escapeHtml(img.name)}">
-      <span class="preview-name">${escapeHtml(img.name)}</span>
-      <button class="preview-remove" onclick="event.stopPropagation();removeGalleryImage(${i})" title="Remove">&times;</button>
-    </div>
-  `).join('');
+  preview.innerHTML = currentGalleryImages.map((img, i) => {
+    const src = img.url || img.preview;
+    return `
+      <div class="preview-item">
+        <img src="${src}" alt="${escapeHtml(img.name)}">
+        <span class="preview-name">${escapeHtml(img.name)}</span>
+        <button class="preview-remove" onclick="event.stopPropagation();removeGalleryImage(${i})" title="Remove">&times;</button>
+      </div>
+    `;
+  }).join('');
 }
 
 function removeGalleryImage(index) {
+  const img = currentGalleryImages[index];
+  if (img && img.preview && !img.url) {
+    URL.revokeObjectURL(img.preview);
+  }
   currentGalleryImages.splice(index, 1);
   renderGalleryPreview();
 }
@@ -413,6 +452,14 @@ function removeGalleryImage(index) {
 // ===== MODAL =====
 
 function clearPhotoState() {
+  // Revoke any local preview URLs
+  if (currentCoverImage && currentCoverImage.preview && !currentCoverImage.url) {
+    URL.revokeObjectURL(currentCoverImage.preview);
+  }
+  currentGalleryImages.forEach(img => {
+    if (img.preview && !img.url) URL.revokeObjectURL(img.preview);
+  });
+
   currentCoverImage = null;
   currentGalleryImages = [];
   const coverPreview = document.getElementById('coverPreview');
@@ -467,27 +514,33 @@ function editListing(id) {
   document.getElementById('fieldP24Link').value = listing.property24Link || '';
   document.getElementById('fieldActive').checked = listing.active !== false;
 
-  // Restore photos
+  // Restore photos from Cloudinary URLs
   clearPhotoState();
 
   if (listing.coverImage) {
-    currentCoverImage = listing.coverImage;
+    currentCoverImage = { url: listing.coverImage, publicId: listing.coverImageId || null, file: null, preview: null };
     renderCoverPreview();
   } else if (listing.images && listing.images.length > 0) {
-    currentCoverImage = listing.images[0];
+    currentCoverImage = { url: listing.images[0], publicId: null, file: null, preview: null };
     renderCoverPreview();
   }
 
   if (listing.galleryImages && listing.galleryImages.length > 0) {
     currentGalleryImages = listing.galleryImages.map(img => ({
       name: img.name || 'photo.jpg',
-      data: img.data || img
+      url: img.url || img.data || img,
+      publicId: img.publicId || null,
+      file: null,
+      preview: null
     }));
     renderGalleryPreview();
   } else if (listing.images && listing.images.length > 1) {
     currentGalleryImages = listing.images.slice(1).map((url, i) => ({
       name: `photo_${String(i + 1).padStart(3, '0')}.jpg`,
-      data: url
+      url: url,
+      publicId: null,
+      file: null,
+      preview: null
     }));
     renderGalleryPreview();
   }
@@ -501,54 +554,99 @@ async function saveListing(e) {
   e.preventDefault();
 
   const btn = e.target.querySelector('button[type="submit"]');
-  btn.textContent = 'Saving...';
+  const statusEl = document.getElementById('uploadStatus');
+  btn.textContent = 'Uploading images...';
   btn.disabled = true;
+  if (statusEl) statusEl.style.display = 'block';
 
   const editId = document.getElementById('editId').value;
+  const listingId = editId || generateId();
   const price = parseInt(document.getElementById('fieldPrice').value) || 0;
   const agentName = document.getElementById('fieldAgent').value;
   const agentPhone = agentName === 'Johan van Niekerk' ? '0824445278' : '0824878587';
 
-  // Build images array: cover first, then gallery
-  const allImages = [];
-  if (currentCoverImage) allImages.push(currentCoverImage);
-  currentGalleryImages.forEach(img => allImages.push(img.data));
+  try {
+    // Upload new cover image to Cloudinary
+    let coverUrl = null;
+    let coverImageId = null;
+    if (currentCoverImage) {
+      if (currentCoverImage.url) {
+        // Already uploaded (editing existing listing)
+        coverUrl = currentCoverImage.url;
+        coverImageId = currentCoverImage.publicId;
+      } else if (currentCoverImage.file) {
+        // New file — upload to Cloudinary
+        if (statusEl) statusEl.textContent = 'Uploading cover photo...';
+        const result = await uploadToCloudinary(currentCoverImage.file, `goldmark/${listingId}`);
+        coverUrl = result.url;
+        coverImageId = result.publicId;
+      }
+    }
 
-  const listing = {
-    id: editId || generateId(),
-    title: document.getElementById('fieldTitle').value.trim(),
-    price: price,
-    priceText: formatAdminPrice(price),
-    type: document.getElementById('fieldType').value,
-    status: document.getElementById('fieldStatus').value,
-    bedrooms: parseInt(document.getElementById('fieldBedrooms').value) || 0,
-    bathrooms: parseInt(document.getElementById('fieldBathrooms').value) || 0,
-    garages: parseInt(document.getElementById('fieldGarages').value) || 0,
-    erfSize: parseInt(document.getElementById('fieldErfSize').value) || 0,
-    floorSize: parseInt(document.getElementById('fieldFloorSize').value) || 0,
-    area: document.getElementById('fieldArea').value,
-    address: document.getElementById('fieldAddress').value.trim() || document.getElementById('fieldArea').value + ', Pretoria',
-    description: document.getElementById('fieldDescription').value.trim(),
-    features: getSelectedFeatures(),
-    images: allImages,
-    coverImage: currentCoverImage || null,
-    galleryImages: currentGalleryImages.map(img => ({ name: img.name, data: img.data })),
-    agent: agentName,
-    agentPhone: agentPhone,
-    dateAdded: editId ? (adminListings.find(l => l.id === editId)?.dateAdded || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
-    property24Ref: document.getElementById('fieldP24Ref').value.trim(),
-    property24Link: document.getElementById('fieldP24Link').value.trim(),
-    active: document.getElementById('fieldActive').checked
-  };
+    // Upload new gallery images to Cloudinary
+    const galleryData = [];
+    for (let i = 0; i < currentGalleryImages.length; i++) {
+      const img = currentGalleryImages[i];
+      if (img.url) {
+        // Already uploaded
+        galleryData.push({ name: img.name, url: img.url, publicId: img.publicId });
+      } else if (img.file) {
+        // New file — upload
+        if (statusEl) statusEl.textContent = `Uploading photo ${i + 1} of ${currentGalleryImages.length}...`;
+        const result = await uploadToCloudinary(img.file, `goldmark/${listingId}`);
+        galleryData.push({ name: img.name, url: result.url, publicId: result.publicId });
+      }
+    }
 
-  const success = await saveListingToFirestore(listing);
+    // Build images array (all URLs for display)
+    const allImageUrls = [];
+    if (coverUrl) allImageUrls.push(coverUrl);
+    galleryData.forEach(img => allImageUrls.push(img.url));
 
-  btn.textContent = 'Save Listing';
-  btn.disabled = false;
+    btn.textContent = 'Saving listing...';
+    if (statusEl) statusEl.textContent = 'Saving to database...';
 
-  if (success) {
-    await loadAdminListings();
-    closeModal();
+    const listing = {
+      id: listingId,
+      title: document.getElementById('fieldTitle').value.trim(),
+      price: price,
+      priceText: formatAdminPrice(price),
+      type: document.getElementById('fieldType').value,
+      status: document.getElementById('fieldStatus').value,
+      bedrooms: parseInt(document.getElementById('fieldBedrooms').value) || 0,
+      bathrooms: parseInt(document.getElementById('fieldBathrooms').value) || 0,
+      garages: parseInt(document.getElementById('fieldGarages').value) || 0,
+      erfSize: parseInt(document.getElementById('fieldErfSize').value) || 0,
+      floorSize: parseInt(document.getElementById('fieldFloorSize').value) || 0,
+      area: document.getElementById('fieldArea').value,
+      address: document.getElementById('fieldAddress').value.trim() || document.getElementById('fieldArea').value + ', Pretoria',
+      description: document.getElementById('fieldDescription').value.trim(),
+      features: getSelectedFeatures(),
+      images: allImageUrls,
+      coverImage: coverUrl,
+      coverImageId: coverImageId,
+      galleryImages: galleryData,
+      agent: agentName,
+      agentPhone: agentPhone,
+      dateAdded: editId ? (adminListings.find(l => l.id === editId)?.dateAdded || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
+      property24Ref: document.getElementById('fieldP24Ref').value.trim(),
+      property24Link: document.getElementById('fieldP24Link').value.trim(),
+      active: document.getElementById('fieldActive').checked
+    };
+
+    const success = await saveListingToFirestore(listing);
+
+    if (success) {
+      await loadAdminListings();
+      closeModal();
+    }
+  } catch (err) {
+    console.error('Error saving listing:', err);
+    alert('Error: ' + err.message);
+  } finally {
+    btn.textContent = 'Save Listing';
+    btn.disabled = false;
+    if (statusEl) statusEl.style.display = 'none';
   }
 }
 
